@@ -1,0 +1,62 @@
+[username-password-list]
+user1 hello1
+user2 hello2
+user3 hello3
+usert hellot
+
+[global]
+workgroup = WORKGROUP2
+netbios name = haha
+wins support = yes
+preferred master = yes
+
+[timemachine]
+   path = /samba_data/timemachine
+   size_limit = 100
+   vol size limit = 200
+   user = usert
+
+[case1]
+   path = /samba_data/case1/
+#   comment = This share allows guest to read-write without authentication
+   browsable = no
+   browseable = yes
+   guest_access = no
+   guest access = ro
+   guest access = rw
+
+[case2]
+#   comment = This share allows guest to read only without authentication
+   path = /samba_data/case2/
+   guest access = ro
+
+[case3]
+#   comment = This share allows guest to read only, user1 user2 to read-write
+   path = /samba_data/case3
+   guest access = ro
+   rw_users = user1,user2
+   write list = user1 user2
+
+[case4]
+#   comment = This share allows user1 user2 to read only
+   path = /samba_data/case4
+   guest_access = no
+   ro_users = user1, 	user2
+   read list = user1	user2  
+
+[case5]
+#   comment = This share allows user1 to read only, user2 to read-write
+   path = /samba_data/case5
+   guest access = no
+   read list = user1 user2 user3
+   write list = user2
+
+[case6]
+#   comment = This share allows no one to access
+   path = /samba_data/case6
+
+[case7]
+   comment = This share allows user2 read write
+   path = /samba_data/case7
+   rw_users = user2
+   write list = user2

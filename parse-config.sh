@@ -1,33 +1,36 @@
 #!/bin/bash
 
 function get_user_list () {
-#    echo "filename=$1 section_name=$2 $#"
+# pass filename as $1 and section_name as $2"
 
 # 1. get rid of comments (lines that start with either # of ; )
 # 2. get rid of everything before and including [section_name]
 # 3. get rid of everything after and including the next [
 # 4. get rid of empty lines
 
-    echo $(cat $1 | \
-           sed -E 's/^\s*[#;].*$//g' | \
+#    cat $1 | \
+           sed -E 's/^\s*[#;].*$//g' "$1" | \
            sed -nE '/\s*\['"$2"'\]/,$p' | sed -E '/\s*\['"$2"'\]/d' | \
            sed -n '/\s*\[/q;p' | \
-           sed -E '/^\s*$/d' )
+           sed -E '/^\s*$/d'
 }
 
 function read_section_list() {
+# pass filename as $1 and section to ignore as $2
+
 # sed 1. get rid of comment and blank lines
 # sed 2. keep only section names and remove []
-# sed 3. remove section $USER_SECTION & remove leading-trailing spaces
+# sed 3. remove section $2 & remove leading-trailing spaces
 # sed 4. remove blank lines and replace newline with semicolon
-  echo $(cat $1 | \
-         sed -E 's/^\s*[#;].*$//g' | sed -E '/^\s*$/d' | \
+#  cat $1 | \
+         sed -E 's/^\s*[#;].*$//g' "$1" | sed -E '/^\s*$/d' | \
          sed -nE '/\s*\[(.+)\].*$/p' | sed -E 's/\[(.+)\]/\1/g' | \
-         sed -E 's/'"$USER_SECTION"'//g' | sed -E 's/^[ \t]*//;s/[ \t]*$//' | \
-         sed -E '/^\s*$/d' | sed -z 's/\n/;/g;s/;$/\n/' )
+         sed -E 's/'"$2"'//g' | sed -E 's/^[ \t]*//;s/[ \t]*$//' | \
+         sed -E '/^\s*$/d' | sed -z 's/\n/;/g;s/;$/\n/'
 }
 
 function read_section() {
+# pass filename as $1 and section name as $2
 
 # sed 1. get rid of comment and blank lines
 # sed 2. get rid of white space before and after section name
@@ -35,11 +38,13 @@ function read_section() {
 # sed 4. get rid of everything after the current section & replace newline with semicolon
   SECTION_NAME=$2
 
-  echo $(cat $1 | \
-         sed -E 's/^\s*[#;].*$//g' | sed -E '/^\s*$/d' | \
+  echo $(
+         cat $1 | \
+         sed -E 's/^\s*[#;].*$//g' "$1" | sed -E '/^\s*$/d' | \
          sed -E 's/\s*\[[ \t]*(.+)\].*$/\[\1\]/g'| sed -E 's/\[(.+)[ \t]+\]/\[\1\]/g' |
          sed -E '0,/\['"$SECTION_NAME"'\].*$/d' |
-         sed -nE '/^[ \t]*\[/q;p' |  sed -z 's/\n/;/g;s/;$/\n/' )
+         sed -nE '/^[ \t]*\[/q;p' |  sed -z 's/\n/;/g;s/;$/\n/'
+        )
 }
 
 function add_samba_users () {
@@ -78,20 +83,26 @@ function add_samba_users () {
 
 # pass in $SECTION_NAME
 function parser_init () {
-#  SECTION_TEXT="[""$1""]"$'\n'
-  if [ "$1" == "timemachine" ]; then
-    IS_TIME_MACHINE="yes"
+  if [[ "$1" == "timemachine" ]]; then
+    SECTION_TYPE="timemachine"
     FOUND_PATH="no";       FOUND_PATH_VALUE=""
     FOUND_SIZE_LIMIT="no"; FOUND_SIZE_LIMIT_VALUE=""
     FOUND_USER="no";       FOUND_USER_VALUE=""
+  elif [[ "$1" == "global" ]]; then
+    SECTION_TYPE="global"
+                                 FOUND_WORKGROUP_VALUE="WORKGROUP"
+                                 FOUND_SERVER_STRING_VALUE="Samba Ubuntu"
+    FOUND_NETBIOS_NAME="no";     FOUND_NETBIOS_NAME_VALUE=""
+    FOUND_WINS_SUPPORT="no";     FOUND_WINS_SUPPORT_VALUE="no"
+    FOUND_PREFERRED_MASTER="no"; FOUND_PREFERRED_MASTER_VALUE="auto"
   else
-    IS_TIME_MACHINE="no"
+    SECTION_TYPE="smb-share"
     FOUND_PATH="no";         FOUND_PATH_VALUE=""
     FOUND_COMMENT="no";      FOUND_COMMENT_VALUE=""
-    FOUND_BROWSABLE="no";    FOUND_BROWSABLE_VALUE="yes"
-    FOUND_GUEST_ACCESS="no"; FOUND_GUEST_ACCESS_VALUE="no"
-    FOUND_RO_USERS="no";     FOUND_RO_USERS_VALUE=""
-    FOUND_RW_USERS="no";     FOUND_RW_USERS_VALUE=""
+                             FOUND_BROWSABLE_VALUE="yes"
+                             FOUND_GUEST_ACCESS_VALUE="no"
+                             FOUND_RO_USERS_VALUE=""
+                             FOUND_RW_USERS_VALUE=""
   fi
 }
 
@@ -100,7 +111,7 @@ function parse () {
   SEC=$1
   KEY=$2
   VAL=$3
-  if [ "$IS_TIME_MACHINE" == "yes" ]; then
+  if [[ "$SECTION_TYPE" == "timemachine" ]]; then
     case "$KEY" in
       path)
         FOUND_PATH="yes"; FOUND_PATH_VALUE="$VAL"
@@ -113,7 +124,7 @@ function parse () {
         fi
         ;;
       user)
-        VAL=$(echo $VAL | sed -E 's/,+/ /g' | sed -E 's/[ \t]{2,}/ /g' )
+        VAL=$(echo "$VAL" | sed -E 's/,+/ /g' | sed -E 's/[ \t]{2,}/ /g' )
         if ! [[ "$USER_LIST" =~ (" $VAL ") ]]; then
           echo "parse: [$SEC] [$KEY] user [$VAL] is not in USER_LIST [$USER_LIST]"
           exit -1
@@ -126,6 +137,41 @@ function parse () {
         ;;
     esac
 #    echo "parse: section [$SEC] : $KEY = $VAL"
+  elif [[ "$SECTION_TYPE" == "global" ]]; then
+    case "$KEY" in
+      workgroup)
+        if [[ "$VAL" =~ ^.+$ ]]; then
+          FOUND_WORKGROUP_VALUE="$VAL"
+        fi
+        ;;
+      "server string")
+        if [[ "$VAL" =~ ^.+$ ]]; then
+          FOUND_SERVER_STRING_VALUE="$VAL"
+        fi
+        ;;
+      "netbios name")
+        if [[ "$VAL" =~ ^.+$ ]]; then
+          FOUND_NETBIOS_NAME="yes"; FOUND_NETBIOS_NAME_VALUE="$VAL"
+        fi
+        ;;
+      "wins support")
+        if ! [[ "$VAL" =~ ^(yes|no)$ ]]; then
+          echo "parse: section [$SEC] $KEY = $VAL -- invalid value, use only yes|no."
+          exit -1
+        elif [[ "$VAL" == "yes" ]]; then
+          FOUND_WINS_SUPPORT="yes"; FOUND_WINS_SUPPORT_VALUE="yes"
+        fi
+        ;;
+      "preferred master")
+        if ! [[ "$VAL" =~ ^(yes|auto)$ ]]; then
+          echo "parse: section [$SEC] $KEY = $VAL -- invalid value, use only yes|auto."
+          exit -1
+        elif [[ "$VAL" == "yes" ]]; then
+          FOUND_PREFERRED_MASTER="yes"; FOUND_PREFERRED_MASTER_VALUE="yes"
+        fi
+        ;;
+      *)
+    esac
   else
     case "$KEY" in
       path)
@@ -139,17 +185,17 @@ function parse () {
           echo "parse: section [$SEC] $KEY = $VAL -- invalid value, use only yes|no."
           exit -1
         fi
-        FOUND_BROWSABLE="yes";  FOUND_BROWSABLE_VALUE="$3"
+        FOUND_BROWSABLE_VALUE="$VAL"
         ;;
       guest_access | "guest access")
         if ! [[ "$3" =~ ^(no|ro|rw)$ ]]; then
           echo "parse: section [$SEC] $KEY = $VAL -- invalid value, use only no|ro|rw."
           exit -1
         fi
-        FOUND_GUEST_ACCESS="yes"; FOUND_GUEST_ACCESS_VALUE="$VAL"
+        FOUND_GUEST_ACCESS_VALUE="$VAL"
         ;;
       ro_users | "read list")
-        VAL=$(echo $VAL | sed -E 's/,+/ /g' | sed -E 's/[ \t]{2,}/ /g' )
+        VAL=$(echo "$VAL" | sed -E 's/,+/ /g' | sed -E 's/[ \t]{2,}/ /g' )
         IFS=" " read -ra NAME_ARRAY <<< "$VAL"
         for name in "${NAME_ARRAY[@]}"; do
           if ! [[ "$USER_LIST" =~ (" $name ") ]]; then
@@ -157,10 +203,10 @@ function parse () {
             exit -1
           fi
         done
-        FOUND_RO_USERS="yes"; FOUND_RO_USERS_VALUE="$VAL"
+        FOUND_RO_USERS_VALUE="$VAL"
         ;;
       rw_users | "write list")
-        VAL=$(echo $VAL | sed -E 's/,+/ /g' | sed -E 's/[ \t]{2,}/ /g' )
+        VAL=$(echo "$VAL" | sed -E 's/,+/ /g' | sed -E 's/[ \t]{2,}/ /g' )
         IFS=" " read -ra NAME_ARRAY <<< "$VAL"
         for name in "${NAME_ARRAY[@]}"; do
           if ! [[ "$USER_LIST" =~ (" $name ") ]]; then
@@ -168,7 +214,7 @@ function parse () {
             exit -1
           fi
         done
-        FOUND_RW_USERS="yes"; FOUND_RW_USERS_VALUE="$VAL"
+        FOUND_RW_USERS_VALUE="$VAL"
         ;;
       *)
         echo "unknown key section[$SEC] [$KEY] value [$VAL]"
@@ -182,7 +228,7 @@ function parse () {
 function gen_random_user() {
   RANDOM_USER="u"
   for randomlength in {1..11}; do
-    RANDOM_USER="$RANDOM_USER""$(($RANDOM%10))"
+    RANDOM_USER="$RANDOM_USER""$((RANDOM%10))"
   done
   echo "RANDOM_USER is $RANDOM_USER"
 }
@@ -198,7 +244,7 @@ function union_users() {
   for ro_rw_username in "${arr5[@]}"; do
     RO_RW_USERS="$RO_RW_USERS"" ""$ro_rw_username"
   done
-  RO_RW_USERS=$(echo $RO_RW_USERS | sed -E 's/[ \t]+$//g')
+  RO_RW_USERS=$(echo "$RO_RW_USERS" | sed -E 's/[ \t]+$//g')
 }
 
 # pass in section name
@@ -206,15 +252,29 @@ function generate_text () {
 
 SECTION_TEXT=$'\n'"[""$1""]"$'\n'
 #  SECTION_TEXT="$SECTION_TEXT""[""$1""]"$'\n'
-  if [ "$IS_TIME_MACHINE" == "yes" ]; then
+  if [[ "$SECTION_TYPE" == "timemachine" ]]; then
     # handle path
-    if [ "$FOUND_PATH" == "yes" ]; then
+    if [[ "$FOUND_PATH" == "yes" ]]; then
       SECTION_TEXT="$SECTION_TEXT""  path = ""$FOUND_PATH_VALUE"$'\n'
     else
       echo "path for section $SECTION_NAME not found"
     fi
     # handle vol size limit
     [[ "$FOUND_SIZE_LIMIT" == "yes" ]] && SECTION_TEXT="$SECTION_TEXT""  vol size limit = ""$FOUND_SIZE_LIMIT_VALUE"$'\n'
+    # handle user
+    [[ "$FOUND_USER" == "yes" ]] && SECTION_TEXT="$SECTION_TEXT"";  user = ""$FOUND_USER_VALUE"$'\n'
+  elif [[ "$SECTION_TYPE" == "global" ]]; then
+    # handle workgroup
+    SECTION_TEXT="$SECTION_TEXT""  workgroup = ""$FOUND_WORKGROUP_VALUE"$'\n'
+    # handle server string
+    SECTION_TEXT="$SECTION_TEXT""  server string = ""$FOUND_SERVER_STRING_VALUE"$'\n'
+    # handle netbios name
+    [[ "$FOUND_NETBIOS_NAME" == "yes" ]] && SECTION_TEXT="$SECTION_TEXT""  netbios name = ""$FOUND_NETBIOS_NAME_VALUE"$'\n'
+    # handle wins support
+    [[ "$FOUND_WINS_SUPPORT" == "yes" ]] && SECTION_TEXT="$SECTION_TEXT""  wins support = ""$FOUND_WINS_SUPPORT_VALUE"$'\n'
+    # handle preferred master
+    [[ "$FOUND_PREFERRED_MASTER" == "yes" ]] && \
+      SECTION_TEXT="$SECTION_TEXT""  preferred master = ""$FOUND_PREFERRED_MASTER_VALUE"$'\n'
   else
     # handle comment
     [[ "$FOUND_COMMENT" == "yes" ]] && SECTION_TEXT="$SECTION_TEXT""  comment = ""$FOUND_COMMENT_VALUE"$'\n'
@@ -263,9 +323,11 @@ else
   exit -1
 fi
 
+CONFIG_FILENAME="$1"
+
 USER_SECTION="username-password-list"
 
-SAMBA_USER_PASSWORD="$(get_user_list "$1" "$USER_SECTION")"
+SAMBA_USER_PASSWORD="$(get_user_list "$CONFIG_FILENAME" "$USER_SECTION")"
 add_samba_users $SAMBA_USER_PASSWORD
 
 echo "user list is [$USER_LIST]"
@@ -275,30 +337,35 @@ gen_random_user
 SECTION_TEXT=""
 
 #echo "---- share_list ----"
-IFS=";" read -ra SECTION_LIST <<< "$(read_section_list "$1")"
+IFS=";" read -ra SECTION_LIST <<< "$(read_section_list "$CONFIG_FILENAME" "$USER_SECTION")"
 
-ALL_SAMBA_TEXT=""
+ALL_SMB_GLOBAL_TEXT=""
+ALL_SMB_SHARE_TEXT=""
 ALL_AFPD_TEXT=""
 for i in "${SECTION_LIST[@]}"; do
     SECTION_NAME="$i"
     parser_init "$SECTION_NAME"
     IFS=";" read -ra SECTION_LIST <<< "$(read_section "$1" "$i")"
     for j in "${SECTION_LIST[@]}"; do
-      KEY="$(echo $j | cut -d'=' -f1 | sed -E 's/^[ \t]*//;s/[ \t]*$//' )"
-      VAL="$(echo $j | cut -d'=' -f2 | sed -E 's/^[ \t]*//;s/[ \t]*$//' )"
+      KEY="$(echo "$j" | cut -d'=' -f1 | sed -E 's/^[ \t]*//;s/[ \t]*$//' )"
+      VAL="$(echo "$j" | cut -d'=' -f2 | sed -E 's/^[ \t]*//;s/[ \t]*$//' )"
       parse "$SECTION_NAME" "$KEY" "$VAL"
     done
     generate_text "$SECTION_NAME"
-    if [[ "$IS_TIME_MACHINE" == "yes" ]]; then
+    if [[ "$SECTION_TYPE" == "timemachine" ]]; then
       ALL_AFPD_TEXT="$ALL_AFPD_TEXT""$SECTION_TEXT"
+    elif [[ "$SECTION_TYPE" == "global" ]]; then
+      ALL_SMB_GLOBAL_TEXT="$ALL_SMB_GLOBAL_TEXT""$SECTION_TEXT"
     else
-      ALL_SAMBA_TEXT="$ALL_SAMBA_TEXT""$SECTION_TEXT"
+      ALL_SMB_SHARE_TEXT="$ALL_SMB_SHARE_TEXT""$SECTION_TEXT"
    fi
-#    echo "---- SECTION: $SECTION_NAME TIME MACHINE: $IS_TIME_MACHINE ----"
+#    echo "---- SECTION: $SECTION_NAME TIME MACHINE: $SECTION_TYPE ----"
 #    echo "$SECTION_TEXT""----"
 done
 
 echo "---- ALL_AFPD_TEXT ----"
 echo "$ALL_AFPD_TEXT"
-echo "---- ALL_SAMBA_TEXT ----"
-echo "$ALL_SAMBA_TEXT"
+echo "---- ALL_SMB_GLOBAL_TEXT ----"
+echo "$ALL_SMB_GLOBAL_TEXT"
+echo "---- ALL_SMB_SHARE_TEXT ----"
+echo "$ALL_SMB_SHARE_TEXT"
