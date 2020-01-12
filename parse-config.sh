@@ -1,22 +1,53 @@
 #!/bin/bash
 
+# pass filename as $1 and section_name as $2
 function get_user_list () {
-# pass filename as $1 and section_name as $2"
 
-# 1. get rid of comments (lines that start with either # of ; )
-# 2. get rid of everything before and including [section_name]
-# 3. get rid of everything after and including the next [
-# 4. get rid of empty lines
+# 1. change \r\n to \n
+# 2. get rid of comments (lines that start with either # of ; )
+# 3. get rid of everything before and including [section_name]
+# 4. get rid of everything after and including the next [
+# 5. get rid of empty lines
 
 #    cat $1 | \
-           sed -E 's/^\s*[#;].*$//g' "$1" | \
+           sed -E 's/\r$//g' "$1" | \
+           sed -E 's/^\s*[#;].*$//g' | \
            sed -nE '/\s*\['"$2"'\]/,$p' | sed -E '/\s*\['"$2"'\]/d' | \
            sed -n '/\s*\[/q;p' | \
            sed -E '/^\s*$/d'
 }
 
-function read_section_list() {
+# pass username and return password for that user
+function find_password() {
+  # trick from https://stackoverflow.com/questions/19771965/split-bash-string-by-newline-characters
+  readarray -t USER_PASS_ARRAY <<< "$SAMBA_USER_PASSWORD"
+  for upass in "${USER_PASS_ARRAY[@]}"; do
+     readarray -d " " -t USER_PASS <<< "$upass"
+     MATCH_FOUND="no"
+     POINTING="user"
+     for up in "${USER_PASS[@]}"; do
+       up2=$(echo "$up" | tr -d '\n')
+       [[ "$POINTING" == "user" && "$up2" == "$1" ]] && MATCH_FOUND="yes"
+       if [[ "$POINTING" == "pass" && "$MATCH_FOUND" == "yes" ]]; then
+         FOUND_PASSWORD="$up2"
+         break
+       fi
+       POINTING="pass"
+     done
+     if [[ "$MATCH_FOUND" == "yes" ]]; then
+       break
+     fi
+  done
+
+  if [[ "$MATCH_FOUND" != "yes" ]]; then
+    echo "find_password: user $1 not found"
+    exit -1
+  fi
+  echo "found password of user $1 as $FOUND_PASSWORD"
+}
+
 # pass filename as $1 and section to ignore as $2
+function read_section_list() {
 
 # sed 1. get rid of comment and blank lines
 # sed 2. keep only section names and remove []
@@ -87,7 +118,10 @@ function parser_init () {
     SECTION_TYPE="timemachine"
     FOUND_PATH="no";       FOUND_PATH_VALUE=""
     FOUND_SIZE_LIMIT="no"; FOUND_SIZE_LIMIT_VALUE=""
-    FOUND_USER="no";       FOUND_USER_VALUE=""
+    FOUND_USER="no";       FOUND_USER_VALUE=""; FOUND_PASSWORD_VALUE=""
+  elif [[ "$1" == "avahi" ]]; then
+    SECTION_TYPE="avahi"
+                          FOUND_ENABLE_VALUE="no"
   elif [[ "$1" == "global" ]]; then
     SECTION_TYPE="global"
                                  FOUND_WORKGROUP_VALUE="WORKGROUP"
@@ -130,13 +164,14 @@ function parse () {
           exit -1
         fi
         FOUND_USER="yes"; FOUND_USER_VALUE="$VAL"
+        find_password "$FOUND_USER_VALUE"
+        FOUND_PASSWORD_VALUE="$FOUND_PASSWORD"
         ;;
       *)
         echo "unknown key TIMEMACHINE section[$SEC] key [$KEY] value [$VAL]"
         exit -1
         ;;
     esac
-#    echo "parse: section [$SEC] : $KEY = $VAL"
   elif [[ "$SECTION_TYPE" == "global" ]]; then
     case "$KEY" in
       workgroup)
@@ -171,8 +206,25 @@ function parse () {
         fi
         ;;
       *)
+        echo "unknown key GLOBAL section[$SEC] key [$KEY] value [$VAL]"
+        exit -1
+        ;;
     esac
-  else
+  elif [[ "$SECTION_TYPE" == "avahi" ]]; then
+    case "$KEY" in
+      enable)
+        if ! [[ "$VAL" =~ ^(yes|no)$ ]]; then
+          echo "parse: section [$SEC] $KEY = $VAL -- invalid value, use only yes|no."
+          exit -1
+        fi
+        FOUND_ENABLE_VALUE="$VAL"
+        ;;
+      *)
+        echo "unknown key AVAHI section[$SEC] key [$KEY] value [$VAL]"
+        exit -1
+        ;;
+    esac
+  else # samba share section
     case "$KEY" in
       path)
         FOUND_PATH="yes"; FOUND_PATH_VALUE="$VAL"
@@ -217,17 +269,17 @@ function parse () {
         FOUND_RW_USERS_VALUE="$VAL"
         ;;
       *)
-        echo "unknown key section[$SEC] [$KEY] value [$VAL]"
+        echo "unknown key SAMBA SHARE section [$SEC] [$KEY] value [$VAL]"
         exit -1
         ;;
     esac
-#    echo "parse: section [$SEC] : $KEY = $VAL"
   fi
+#  echo "parse: section [$SEC] : $KEY = $VAL"
 }
 
 function gen_random_user() {
   RANDOM_USER="u"
-  for randomlength in {1..11}; do
+  for randomlength in {1..12}; do
     RANDOM_USER="$RANDOM_USER""$((RANDOM%10))"
   done
   echo "RANDOM_USER is $RANDOM_USER"
@@ -248,21 +300,35 @@ function union_users() {
 }
 
 # pass in section name
-function generate_text () {
+function generate_text_and_variables () {
 
-SECTION_TEXT=$'\n'"[""$1""]"$'\n'
-#  SECTION_TEXT="$SECTION_TEXT""[""$1""]"$'\n'
+  SEC="$1"
+  SECTION_TEXT=$'\n'"[""$SEC""]"$'\n'
+
   if [[ "$SECTION_TYPE" == "timemachine" ]]; then
     # handle path
     if [[ "$FOUND_PATH" == "yes" ]]; then
       SECTION_TEXT="$SECTION_TEXT""  path = ""$FOUND_PATH_VALUE"$'\n'
     else
       echo "path for section $SECTION_NAME not found"
+      exit -1
     fi
     # handle vol size limit
-    [[ "$FOUND_SIZE_LIMIT" == "yes" ]] && SECTION_TEXT="$SECTION_TEXT""  vol size limit = ""$FOUND_SIZE_LIMIT_VALUE"$'\n'
+    if [[ "$FOUND_SIZE_LIMIT" == "yes" ]]; then
+       SECTION_TEXT="$SECTION_TEXT""  vol size limit = ""$FOUND_SIZE_LIMIT_VALUE"$'\n'
+       TIMEMACHINE_SIZE_LIMIT="$FOUND_SIZE_LIMIT_VALUE"
+    else
+       unset TIMEMACHINE_SIZE_LIMIT
+    fi
     # handle user
-    [[ "$FOUND_USER" == "yes" ]] && SECTION_TEXT="$SECTION_TEXT"";  user = ""$FOUND_USER_VALUE"$'\n'
+    if [[ "$FOUND_USER" != "yes" ]]; then
+      echo "user for section $SECTION_NAME not found"
+      exit -1
+    fi
+    SECTION_TEXT="$SECTION_TEXT"";  user = ""$FOUND_USER_VALUE"$'\n'
+    SECTION_TEXT="$SECTION_TEXT"";  password = ""$FOUND_PASSWORD_VALUE"$'\n'
+    AFP_USER="$FOUND_USER_VALUE"
+    AFP_PASSWORD="$FOUND_PASSWORD_VALUE"
   elif [[ "$SECTION_TYPE" == "global" ]]; then
     # handle workgroup
     SECTION_TEXT="$SECTION_TEXT""  workgroup = ""$FOUND_WORKGROUP_VALUE"$'\n'
@@ -275,6 +341,13 @@ SECTION_TEXT=$'\n'"[""$1""]"$'\n'
     # handle preferred master
     [[ "$FOUND_PREFERRED_MASTER" == "yes" ]] && \
       SECTION_TEXT="$SECTION_TEXT""  preferred master = ""$FOUND_PREFERRED_MASTER_VALUE"$'\n'
+  elif [[ "$SECTION_TYPE" == "avahi" ]]; then
+    if [[ "$FOUND_ENABLE_VALUE" == "yes" ]]; then
+      SECTION_TEXT="$SECTION_TEXT""  enable = ""$FOUND_ENABLE_VALUE"$'\n'
+      AVAHI=1
+    else
+      AVAHI=0
+    fi
   else
     # handle comment
     [[ "$FOUND_COMMENT" == "yes" ]] && SECTION_TEXT="$SECTION_TEXT""  comment = ""$FOUND_COMMENT_VALUE"$'\n'
@@ -328,6 +401,8 @@ CONFIG_FILENAME="$1"
 USER_SECTION="username-password-list"
 
 SAMBA_USER_PASSWORD="$(get_user_list "$CONFIG_FILENAME" "$USER_SECTION")"
+#echo "SAMBA_USER_PASSWORD = [$SAMBA_USER_PASSWORD]"
+find_password "usert"
 add_samba_users $SAMBA_USER_PASSWORD
 
 echo "user list is [$USER_LIST]"
@@ -342,6 +417,7 @@ IFS=";" read -ra SECTION_LIST <<< "$(read_section_list "$CONFIG_FILENAME" "$USER
 ALL_SMB_GLOBAL_TEXT=""
 ALL_SMB_SHARE_TEXT=""
 ALL_AFPD_TEXT=""
+ALL_AVAHI_TEXT=""
 for i in "${SECTION_LIST[@]}"; do
     SECTION_NAME="$i"
     parser_init "$SECTION_NAME"
@@ -351,11 +427,13 @@ for i in "${SECTION_LIST[@]}"; do
       VAL="$(echo "$j" | cut -d'=' -f2 | sed -E 's/^[ \t]*//;s/[ \t]*$//' )"
       parse "$SECTION_NAME" "$KEY" "$VAL"
     done
-    generate_text "$SECTION_NAME"
+    generate_text_and_variables "$SECTION_NAME"
     if [[ "$SECTION_TYPE" == "timemachine" ]]; then
       ALL_AFPD_TEXT="$ALL_AFPD_TEXT""$SECTION_TEXT"
     elif [[ "$SECTION_TYPE" == "global" ]]; then
       ALL_SMB_GLOBAL_TEXT="$ALL_SMB_GLOBAL_TEXT""$SECTION_TEXT"
+    elif [[ "$SECTION_TYPE" == "avahi" ]]; then
+      ALL_AVAHI_TEXT="$ALL_AVAHI_TEXT""$SECTION_TEXT"
     else
       ALL_SMB_SHARE_TEXT="$ALL_SMB_SHARE_TEXT""$SECTION_TEXT"
    fi
@@ -364,8 +442,14 @@ for i in "${SECTION_LIST[@]}"; do
 done
 
 echo "---- ALL_AFPD_TEXT ----"
+echo "     AFP_USER=$AFP_USER"
+echo "     AFP_PASSWORD=$AFP_PASSWORD"
+echo "     TIMEMACHINE_SIZE_LIMIT=$TIMEMACHINE_SIZE_LIMIT"
 echo "$ALL_AFPD_TEXT"
 echo "---- ALL_SMB_GLOBAL_TEXT ----"
 echo "$ALL_SMB_GLOBAL_TEXT"
+echo "---- ALL_AVAHI_TEXT ----"
+echo "     AVAHI=""$AVAHI"
+echo "$ALL_AVAHI_TEXT"
 echo "---- ALL_SMB_SHARE_TEXT ----"
 echo "$ALL_SMB_SHARE_TEXT"

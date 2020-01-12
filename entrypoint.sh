@@ -40,7 +40,7 @@ SEDEX="s/; timemachine vol size limit =/vol size limit = ""$TIMEMACHINE_SIZE_LIM
 if [[ $TIMEMACHINE_SIZE_LIMIT =~ ^[0-9]+$ ]] ; then
   sed -i'' -E "$SEDEX" /etc/netatalk/afp.conf
 else
-  echo "SHARE_SIZE_LIMIT isn't number"
+  echo "TIMEMACHINE_SIZE_LIMIT isn't number"
 fi
 
 echo ---begin-afp.conf--
