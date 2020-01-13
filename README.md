@@ -10,7 +10,7 @@
 - In the following example, we will put out samba data in `/home/dude/samba_data`, our time machine data in `/home/dude/samba_data/timemachine_data` and our config file at `/home/dude/samba-netatalk/config-sample5`
 - Run:
 ```
-docker run -d --rm --restart always \
+docker run -d --restart always \
     --network host \
     -e PUID=$(id -u) -e PGID=$(id -g) \
     --name samba-netatalk \
@@ -23,7 +23,7 @@ docker run -d --rm --restart always \
   - The built-in Avahi daemon won't work unless the container is run from host network, which isn't ideal.
   - if you do not want to run from host network, replace the run above with:
   ```
-  docker run -d --rm --restart always \
+  docker run -d --restart always \
     -p 137:137/udp -p 138:138/udp -p 139:139/tcp -p 445:445/tcp \
     -p 548:548/tcp \
     -e PUID=$(id -u) -e PGID=$(id -g) \
