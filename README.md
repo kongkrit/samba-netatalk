@@ -5,7 +5,7 @@
 
 ## Quick Start
 - Pull image `docker pull kongkrit/samba-netatalk:latest`
-- Read the (yet-to-be-explained-but-pretty-self-explanatory) [config]() file
+- Read the (yet-to-be-explained-but-pretty-self-explanatory) [config](https://raw.githubusercontent.com/kongkrit/samba-netatalk/master/config-sample5) file
 - In there, you can see you need to create a folder per samba share, and a folder for time machine
 - In the following example, we will put out samba data in `/home/dude/samba_data`, our time machine data in `/home/dude/samba_data/timemachine_data` and our config file at `/home/dude/samba-netatalk/config-sample5`
 - Run:
