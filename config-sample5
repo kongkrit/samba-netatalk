@@ -12,51 +12,51 @@ server string = foofoo
 enable = yes
 
 [timemachine]
-   path = /samba_data/timemachine
+#   path = /timemachine_data
 #   size_limit = 100
-#   vol size limit = 2000
+   vol size limit = 20000
    user = usert
 
-[case1 yes]
+[case1 guest-rw]
    path = /samba_data/case1/
-#   comment = This share allows guest to read-write without authentication
+   comment = This share allows guest to read-write without authentication
    browsable = no
    browseable = yes
    guest_access = no
    guest access = ro
    guest access = rw
 
-[case2 space]
+[case2 guest-ro]
 #   comment = This share allows guest to read only without authentication
    path = /samba_data/case2/
    guest access = ro
 
-[case3 nano]
+[case3 u2 guest-ro]
 #   comment = This share allows guest to read only, user1 user2 to read-write
    path = /samba_data/case3
    guest access = ro
    rw_users = user1,user2
    write list = user1 user2
 
-[case4 micro]
+[case4 u1u2-ro]
 #   comment = This share allows user1 user2 to read only
    path = /samba_data/case4
    guest_access = no
    ro_users = user1, 	user2
    read list = user1	user2  
 
-[case5 amoeba help]
+[case5 u1ro-u2rw]
 #   comment = This share allows user1 to read only, user2 to read-write
    path = /samba_data/case5
    guest access = no
    read list = user1 user2 user3
    write list = user2
 
-[case6 hope it works]
+[case6 none]
 #   comment = This share allows no one to access
    path = /samba_data/case6
 
-[case7 dude i am dead]
+[case7 u2rw]
    comment = This share allows user2 read write
    path = /samba_data/case7
    rw_users = user2
